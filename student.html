@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>منصة المحاضرات — الطالب</title>
+  <style>
+:root {
+  --bg: #0b1020;
+  --card: #151d33;
+  --card2: #1d2742;
+  --text: #eef3ff;
+  --muted: #9aa8c7;
+  --primary: #4f8cff;
+  --danger: #ff5c6c;
+  --ok: #35d399;
+  --border: #2a3656;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 22px;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+}
+
+.brand { font-weight: 700; font-size: 18px; }
+.link-btn { color: var(--primary); text-decoration: none; font-size: 14px; }
+.pill { background: var(--card2); padding: 5px 12px; border-radius: 20px; font-size: 13px; color: var(--muted); }
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 16px;
+  padding: 16px;
+  max-width: 1500px;
+  margin: auto;
+}
+
+.student-layout {
+  max-width: 900px;
+  margin: auto;
+  padding: 16px;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+h2, h3 { margin: 0 0 10px; font-size: 18px; }
+h3 { font-size: 16px; }
+
+.muted, .hint { color: var(--muted); font-size: 13px; margin: 4px 0 12px; }
+.hint { font-size: 12px; }
+
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+input[type="text"] {
+  flex: 1;
+  min-width: 140px;
+  background: var(--card2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 10px 12px;
+  border-radius: 9px;
+  outline: none;
+}
+input[type="text"]:focus { border-color: var(--primary); }
+
+.quality-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.quality-label select {
+  background: var(--card2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 9px 10px;
+  border-radius: 9px;
+  outline: none;
+  cursor: pointer;
+}
+.quality-label select:disabled { opacity: .45; cursor: not-allowed; }
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+  margin: 10px 0 4px;
+}
+.check-row input { accent-color: var(--primary); }
+
+.hint a { color: var(--primary); }
+
+.btn {
+  background: var(--card2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 10px 14px;
+  border-radius: 9px;
+  cursor: pointer;
+  font-size: 14px;
+  white-space: nowrap;
+}
+.btn:hover { filter: brightness(1.15); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; font-weight: 700; }
+.btn.danger { background: rgba(255,92,108,.14); border-color: var(--danger); color: #ff98a3; }
+.btn.ghost { background: transparent; }
+.btn.small { padding: 8px 12px; font-size: 13px; }
+
+.stage-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.status { color: var(--ok); font-size: 13px; }
+.status.rec { color: var(--danger); font-weight: 700; }
+
+.videos { display: grid; gap: 12px; margin: 12px 0; }
+
+.tile {
+  position: relative;
+  background: #05080f;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.tile video { width: 100%; height: 100%; display: block; object-fit: cover; }
+.main-tile { aspect-ratio: 16 / 9; }
+.label {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  background: rgba(0,0,0,.6);
+  padding: 4px 9px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.students-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 10px;
+}
+.student { aspect-ratio: 4 / 3; }
+
+.controls { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+
+.download-box {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 10px;
+  background: rgba(53,211,153,.1);
+  border: 1px solid var(--ok);
+  font-size: 14px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.download-box a { color: var(--primary); font-weight: 700; }
+.download-box .download-help { width: 100%; margin: 0; }
+
+.chat-list {
+  height: 190px;
+  overflow-y: auto;
+  background: var(--card2);
+  border-radius: 9px;
+  padding: 8px;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+.msg { padding: 6px 4px; border-bottom: 1px solid rgba(255,255,255,.05); }
+.msg .who { color: var(--primary); font-weight: 700; margin-left: 6px; }
+.msg.mine .who { color: var(--ok); }
+.empty { color: var(--muted); text-align: center; padding: 20px 0; }
+
+.log { max-height: 170px; overflow-y: auto; font-size: 12px; color: var(--muted); }
+.log div { padding: 3px 0; border-bottom: 1px solid rgba(255,255,255,.04); }
+
+.teacher-wrap {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  background: #05080f;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  margin: 12px 0;
+}
+.teacher-wrap video { width: 100%; height: 100%; object-fit: cover; }
+
+.self-wrap {
+  position: relative;
+  width: 150px;
+  aspect-ratio: 4 / 3;
+  background: #05080f;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.self-wrap video { width: 100%; height: 100%; object-fit: cover; }
+
+.chat-card { margin-top: 16px; }
+
+@media (max-width: 950px) {
+  .layout { grid-template-columns: 1fr; }
+  .side-col { order: 2; }
+}
+
+@media (max-width: 560px) {
+  .topbar { padding: 10px 14px; }
+  .card { padding: 12px; }
+  .btn { flex: 1 1 auto; }
+  .self-wrap { width: 110px; }
+  .chat-list { height: 150px; }
+}
+
+</style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">🎓 منصة المحاضرات</div>
+    <div class="top-actions"><span class="pill" id="roomLabel">lecture</span></div>
+  </header>
+
+  <main class="student-layout">
+    <section class="card join-card" id="joinCard">
+      <h2>ادخل المحاضرة</h2>
+      <p class="muted">اكتب اسمك، وبعدين اضغط الدخول. المتصفح هيطلب إذن الكاميرا والميكروفون.</p>
+      <div class="row">
+        <input id="nameInput" type="text" placeholder="اسمك" maxlength="30">
+        <button id="joinBtn" class="btn primary">اضغط للدخول</button>
+        <button id="retryBtn" class="btn" hidden>إعادة المحاولة</button>
+      </div>
+      <p id="status" class="status">في انتظار الدخول...</p>
+      <p class="hint">لو الرابط من موبايل: لازم تستخدم IP الكمبيوتر، مش `localhost`. ولازم صفحة المحاضر تكون مفتوحة عند المحاضر.</p>
+    </section>
+
+    <section class="card live-card" id="liveCard" hidden>
+      <div class="stage-head">
+        <h2>المحاضرة</h2>
+        <span id="liveStatus" class="status">متصل</span>
+      </div>
+
+      <div class="teacher-wrap">
+        <video id="teacherVideo" autoplay playsinline></video>
+        <span class="label">المحاضر</span>
+      </div>
+
+      <div class="self-wrap">
+        <video id="selfVideo" autoplay playsinline muted></video>
+        <span class="label">أنت</span>
+      </div>
+
+      <div class="controls" id="controls" hidden>
+        <button id="micBtn" class="btn">🎤 الميكروفون: متصل</button>
+        <button id="camBtn" class="btn">📷 الكاميرا: متصلة</button>
+        <button id="leaveBtn" class="btn ghost">مغادرة</button>
+      </div>
+
+      <div class="chat-card" id="chatCard" hidden>
+        <h3>الأسئلة والدردشة</h3>
+        <div id="chatList" class="chat-list"></div>
+        <div class="row">
+          <input id="chatInput" type="text" placeholder="اكتب سؤالك...">
+          <button id="sendBtn" class="btn small">إرسال</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <script>
+/* دوال مشتركة بين صفحة المحاضر وصفحة الطالب */
+const App = {
+  /* إعدادات PeerJS.
+     الافتراضي: سيرفر PeerJS المجاني.
+     لو حبيت سيرفر خاص بك، فك التعليق عن السطر اللي بعده وعدّل البيانات. */
+  peerConfig() {
+    // return { host: 'localhost', port: 9000, path: '/', secure: false };
+    return {
+      config: {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' }
+          // لو طالب ورا شبكة صعبة (NAT متماثل / firm wall) محتاج TURN relay.
+          // ضيف هنا بيانات TURN (مجانية/مدفوعة) بالشكل ده:
+          // { urls: 'turn:HOST:3478', username: 'USER', credential: 'PASS' }
+        ]
+      }
+    };
+  },
+
+  param(key, fallback = '') {
+    return new URLSearchParams(location.search).get(key) || fallback;
+  },
+
+  el(id) {
+    return document.getElementById(id);
+  },
+
+  log(id, msg) {
+    const box = this.el(id);
+    if (!box) return;
+    const line = document.createElement('div');
+    line.textContent = `[${new Date().toLocaleTimeString('ar')}] ${msg}`;
+    box.prepend(line);
+    while (box.children.length > 30) box.lastChild.remove();
+  },
+
+  async media() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw new Error('المتصفح مش بيدعم الكاميرا/الميكروفون، أو الرابط مش HTTPS / localhost.');
+    }
+    return navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
+      audio: { echoCancellation: true, noiseSuppression: true }
+    });
+  },
+
+  attach(videoEl, stream, muted) {
+    if (!videoEl) return;
+    videoEl.srcObject = stream || null;
+    videoEl.muted = !!muted;
+    const p = videoEl.play();
+    if (p && p.catch) p.catch(() => {});
+  },
+
+  async copy(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (e) {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      let ok = false;
+      try { ok = document.execCommand('copy'); } catch (err) {}
+      ta.remove();
+      return ok;
+    }
+  },
+
+  err(e) {
+    const n = e && e.name ? e.name : '';
+    if (n === 'NotAllowedError' || n === 'PermissionDeniedError')
+      return 'لازم تسمح للمتصفح بالكاميرا والميكروفون.';
+    if (n === 'NotFoundError' || n === 'DevicesNotFoundError')
+      return 'مفيش كاميرا أو ميكروفون متصل.';
+    if (n === 'NotReadableError') return 'الجهاز مستخدم من برنامج تاني.';
+    if (n === 'peer-unavailable') return 'المحاضر مش متصل دلوقتي — تأكد إنه فتح صفحة المحاضر.';
+    if (n === 'network' || n === 'server-error') return 'في مشكلة في الاتصال بالسيرفر.';
+    return (e && e.message) ? e.message : 'خطأ غير معروف.';
+  },
+
+  appendChat(listId, who, text, mine) {
+    const list = this.el(listId);
+    if (!list) return;
+    const empty = list.querySelector('.empty');
+    if (empty) empty.remove();
+    const div = document.createElement('div');
+    div.className = 'msg' + (mine ? ' mine' : '');
+    const w = document.createElement('span');
+    w.className = 'who';
+    w.textContent = who + ':';
+    const t = document.createElement('span');
+    t.textContent = text;
+    div.appendChild(w);
+    div.appendChild(t);
+    list.appendChild(div);
+    list.scrollTop = list.scrollHeight;
+  }
+};
+
+/* منطق صفحة الطالب */
+const $ = (id) => document.getElementById(id);
+
+const teacherId = App.param('to');
+const roomName = App.param('room', 'lecture');
+const displayRoom = App.param('room', 'lecture');
+
+let peer = null;
+let localStream = null;
+let dataConn = null;
+let outgoingCall = null;
+let studentName = '';
+
+$('roomLabel').textContent = displayRoom;
+
+function showError(msg) {
+  $('status').textContent = msg;
+  $('status').classList.add('rec');
+  $('joinBtn').disabled = false;
+  $('joinBtn').textContent = 'اضغط للدخول';
+  $('retryBtn').hidden = false;
+}
+
+if (!teacherId) {
+  showError('الرابط غير صحيح — اطلب رابط المحاضرة من المحاضر.');
+  $('joinBtn').disabled = true;
+}
+
+/* ---------- الدخول ---------- */
+async function joinLecture() {
+  if (!teacherId) return;
+  studentName = $('nameInput').value.trim() || 'طالب';
+  $('joinBtn').disabled = true;
+  $('joinBtn').textContent = 'جاري الاتصال...';
+
+  try {
+    localStream = await App.media();
+    App.attach($('selfVideo'), localStream, true);
+
+    peer = new Peer(undefined, App.peerConfig());
+
+    peer.on('open', () => {
+      dataConn = peer.connect(teacherId, { metadata: { name: studentName } });
+      dataConn.on('data', onData);
+
+      outgoingCall = peer.call(teacherId, localStream, { metadata: { name: studentName } });
+      outgoingCall.on('stream', (stream) => {
+        App.attach($('teacherVideo'), stream, false);
+        $('teacherVideo').play().catch(() => {});
+      });
+      outgoingCall.on('close', () => {
+        $('liveStatus').textContent = 'انتهت المحاضرة';
+      });
+      outgoingCall.on('error', (e) => {
+        $('liveStatus').textContent = 'خطأ: ' + App.err(e);
+      });
+
+      $('joinCard').hidden = true;
+      $('liveCard').hidden = false;
+      $('controls').hidden = false;
+      $('chatCard').hidden = false;
+      $('liveStatus').textContent = 'متصل ✅';
+      $('status').classList.remove('rec');
+    });
+
+    peer.on('error', (e) => {
+      showError(App.err(e) + ' تأكد إن المحاضر فتح صفحة المحاضر وخليّها مفتوحة.');
+    });
+  } catch (e) {
+    showError(App.err(e));
+  }
+}
+
+/* ---------- الدردشة ---------- */
+function onData(data) {
+  if (data && data.type === 'chat') {
+    App.appendChat('chatList', data.from, data.text, false);
+  }
+}
+
+function sendChat() {
+  const text = $('chatInput').value.trim();
+  if (!text || !dataConn) return;
+  dataConn.send({ type: 'chat', from: studentName, text: text });
+  App.appendChat('chatList', 'أنت', text, true);
+  $('chatInput').value = '';
+}
+
+/* ---------- التحكم ---------- */
+function toggleTrack(kind, btn, onText, offText) {
+  const track = localStream.getTracks().find((t) => t.kind === kind);
+  if (!track) return;
+  track.enabled = !track.enabled;
+  btn.textContent = track.enabled ? onText : offText;
+}
+
+function leave() {
+  if (outgoingCall) outgoingCall.close();
+  if (dataConn) dataConn.close();
+  if (localStream) localStream.getTracks().forEach((t) => t.stop());
+  if (peer) peer.destroy();
+  location.href = location.pathname + '?to=' + encodeURIComponent(teacherId) + '&room=' + encodeURIComponent(roomName);
+}
+
+$('joinBtn').onclick = joinLecture;
+$('retryBtn').onclick = () => location.reload();
+$('micBtn').onclick = () => toggleTrack('audio', $('micBtn'), '🎤 الميكروفون: متصل', '🔇 الميكروفون: مقفول');
+$('camBtn').onclick = () => toggleTrack('video', $('camBtn'), '📷 الكاميرا: متصلة', '📷 الكاميرا: مقفولة');
+$('sendBtn').onclick = sendChat;
+$('chatInput').onkeydown = (e) => { if (e.key === 'Enter') sendChat(); };
+$('leaveBtn').onclick = leave;
+
+</script>
+</body>
+</html>
