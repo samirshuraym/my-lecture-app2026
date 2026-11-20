@@ -255,6 +255,77 @@ input[type="text"]:focus { border-color: var(--primary); }
   .chat-list { height: 150px; }
 }
 
+/* ---------- سبورة + ترجمة مباشرة ---------- */
+.label { z-index: 3; }
+.enable-sound { z-index: 5; }
+
+/* كانفاس السبورة فوق الفيديو بالظبط — بنفس المقاس الداخلي على الطرفين */
+.whiteboard-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 2;
+  display: block;
+  pointer-events: none;
+  touch-action: none;
+}
+#presenterBoard.drawing { pointer-events: auto; cursor: crosshair; }
+
+.board-tools {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  padding: 9px 10px;
+  background: var(--card2);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+}
+.board-tools[hidden] { display: none; }
+.swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  flex: 0 0 auto;
+}
+.swatch.active { border-color: #fff; box-shadow: 0 0 0 2px var(--primary); }
+
+/* شريط الترجمة: ثابت تحت الفيديو عند المحاضر، وفوق الفيديو عند الطالب */
+.caption-bar {
+  z-index: 4;
+  background: rgba(0,0,0,.8);
+  color: #fff;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 15px;
+  line-height: 1.6;
+  text-align: center;
+  pointer-events: none;
+}
+.caption-bar[hidden] { display: none; }
+.videos + .caption-bar {
+  margin: 8px 0 12px;
+  background: rgba(79,140,255,.14);
+  border: 1px solid var(--primary);
+  min-height: 42px;
+}
+.teacher-wrap .caption-bar {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  right: 8px;
+}
+
+@media (max-width: 560px) {
+  .caption-bar { font-size: 13px; padding: 6px 8px; }
+  .teacher-wrap .caption-bar { bottom: 4px; left: 4px; right: 4px; }
+}
+
 </style>
 </head>
 <body>
@@ -284,8 +355,10 @@ input[type="text"]:focus { border-color: var(--primary); }
 
       <div class="teacher-wrap" id="teacherWrap">
         <video id="teacherVideo" autoplay playsinline></video>
+        <canvas id="studentBoard" class="whiteboard-overlay" width="1280" height="720"></canvas>
         <span class="label">المحاضر</span>
         <button id="enableSoundBtn" class="enable-sound" hidden>🔊 اضغط لتشغيل الصوت</button>
+        <div id="captionBar" class="caption-bar" hidden><span id="captionText"></span></div>
       </div>
 
       <div class="self-wrap">
@@ -383,6 +456,22 @@ const App = {
     );
   },
 
+  /* الترجمة المباشرة: بار واحد على المحاضر وعلى الطلبة */
+  caption(barId, textId, text) {
+    const bar = this.el(barId);
+    const span = this.el(textId);
+    if (!bar || !span) return;
+    span.textContent = text || '';
+    bar.hidden = !text;
+  },
+
+  fileStamp() {
+    const d = new Date();
+    const p = (n) => String(n).padStart(2, '0');
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) +
+      '-' + p(d.getHours()) + '-' + p(d.getMinutes());
+  },
+
   async copy(text) {
     try {
       await navigator.clipboard.writeText(text);
@@ -443,6 +532,11 @@ let dataConn = null;
 let outgoingCall = null;
 let studentName = '';
 
+/* السبورة عند الطالب (للعرض فقط — مفيش رسم من طرفه) */
+let studentBoard = null;
+let boardCtx = null;
+let wbOps = [];
+
 $('roomLabel').textContent = displayRoom;
 
 function showError(msg) {
@@ -457,6 +551,44 @@ if (!teacherId) {
   showError('الرابط غير صحيح — اطلب رابط المحاضرة من المحاضر.');
   $('joinBtn').disabled = true;
 }
+
+/* ---------- السبورة ---------- */
+function initStudentBoard() {
+  studentBoard = $('studentBoard');
+  if (!studentBoard) return;
+  boardCtx = studentBoard.getContext('2d');
+  boardCtx.lineCap = 'round';
+  boardCtx.lineJoin = 'round';
+}
+
+function drawWbLine(op) {
+  if (!boardCtx || !studentBoard || !op) return;
+  const w = studentBoard.width;
+  const h = studentBoard.height;
+  boardCtx.strokeStyle = op.color;
+  boardCtx.lineWidth = Math.max(1, op.size * (w / 1280));
+  boardCtx.lineCap = 'round';
+  boardCtx.lineJoin = 'round';
+  boardCtx.beginPath();
+  boardCtx.moveTo(op.x1 * w, op.y1 * h);
+  boardCtx.lineTo(op.x2 * w, op.y2 * h);
+  boardCtx.stroke();
+}
+
+function applyWbOp(op) {
+  if (!op || op.op !== 'line') return;
+  wbOps.push(op);
+  if (wbOps.length > 6000) wbOps.shift();
+  drawWbLine(op);
+}
+
+function redrawStudentBoard() {
+  if (!boardCtx || !studentBoard) return;
+  boardCtx.clearRect(0, 0, studentBoard.width, studentBoard.height);
+  wbOps.forEach(drawWbLine);
+}
+
+initStudentBoard();
 
 /* ---------- الدخول ---------- */
 async function joinLecture() {
@@ -509,10 +641,19 @@ async function joinLecture() {
   }
 }
 
-/* ---------- الدردشة ---------- */
+/* ---------- البيانات القادمة من المحاضر ---------- */
 function onData(data) {
-  if (data && data.type === 'chat') {
+  if (!data) return;
+  if (data.type === 'chat') {
     App.appendChat('chatList', data.from, data.text, false);
+  } else if (data.type === 'caption') {
+    App.caption('captionBar', 'captionText', data.text || '');
+  } else if (data.type === 'wb') {
+    const ops = data.ops || (data.op ? [data.op] : []);
+    ops.forEach(applyWbOp);
+  } else if (data.type === 'wb-sync') {
+    wbOps = (data.ops || []).slice();
+    redrawStudentBoard();
   }
 }
 

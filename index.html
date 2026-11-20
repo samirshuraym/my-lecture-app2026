@@ -255,6 +255,77 @@ input[type="text"]:focus { border-color: var(--primary); }
   .chat-list { height: 150px; }
 }
 
+/* ---------- سبورة + ترجمة مباشرة ---------- */
+.label { z-index: 3; }
+.enable-sound { z-index: 5; }
+
+/* كانفاس السبورة فوق الفيديو بالظبط — بنفس المقاس الداخلي على الطرفين */
+.whiteboard-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 2;
+  display: block;
+  pointer-events: none;
+  touch-action: none;
+}
+#presenterBoard.drawing { pointer-events: auto; cursor: crosshair; }
+
+.board-tools {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  padding: 9px 10px;
+  background: var(--card2);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+}
+.board-tools[hidden] { display: none; }
+.swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  flex: 0 0 auto;
+}
+.swatch.active { border-color: #fff; box-shadow: 0 0 0 2px var(--primary); }
+
+/* شريط الترجمة: ثابت تحت الفيديو عند المحاضر، وفوق الفيديو عند الطالب */
+.caption-bar {
+  z-index: 4;
+  background: rgba(0,0,0,.8);
+  color: #fff;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 15px;
+  line-height: 1.6;
+  text-align: center;
+  pointer-events: none;
+}
+.caption-bar[hidden] { display: none; }
+.videos + .caption-bar {
+  margin: 8px 0 12px;
+  background: rgba(79,140,255,.14);
+  border: 1px solid var(--primary);
+  min-height: 42px;
+}
+.teacher-wrap .caption-bar {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  right: 8px;
+}
+
+@media (max-width: 560px) {
+  .caption-bar { font-size: 13px; padding: 6px 8px; }
+  .teacher-wrap .caption-bar { bottom: 4px; left: 4px; right: 4px; }
+}
+
 </style>
 </head>
 <body>
@@ -288,15 +359,20 @@ input[type="text"]:focus { border-color: var(--primary); }
         <div class="videos">
           <div class="tile main-tile">
             <video id="preview" autoplay playsinline muted></video>
+            <canvas id="presenterBoard" class="whiteboard-overlay" width="1280" height="720"></canvas>
             <span class="label">أنت (المحاضر)</span>
           </div>
           <div id="studentsGrid" class="students-grid"></div>
         </div>
 
+        <div id="captionBar" class="caption-bar" hidden><span id="captionText"></span></div>
+
         <div class="controls" id="controls">
           <button id="micBtn" class="btn">🎤 الميكروفون: متصل</button>
           <button id="camBtn" class="btn">📷 الكاميرا: متصلة</button>
           <button id="shareBtn" class="btn">🖥️ عرض الشاشة</button>
+          <button id="subtitleBtn" class="btn">💬 الترجمة: مقفولة</button>
+          <button id="boardBtn" class="btn">🖊️ السبورة: مقفولة</button>
           <button id="recordBtn" class="btn danger">⏺️ ابدأ التسجيل</button>
           <button id="stopRecordBtn" class="btn danger" disabled>⏹️ إيقاف التسجيل</button>
           <label class="quality-label">
@@ -308,7 +384,26 @@ input[type="text"]:focus { border-color: var(--primary); }
               <option value="high">عالية (~700MB/ساعة)</option>
             </select>
           </label>
+          <button id="summaryBtn" class="btn">📄 ملخص المحاضرة</button>
           <button id="endBtn" class="btn ghost">إنهاء المحاضرة</button>
+        </div>
+
+        <div class="board-tools" id="boardTools" hidden>
+          <span class="muted">اللون:</span>
+          <button class="swatch active" data-color="#ff4d6d" style="background:#ff4d6d" title="أحمر"></button>
+          <button class="swatch" data-color="#ffd166" style="background:#ffd166" title="أصفر"></button>
+          <button class="swatch" data-color="#35d399" style="background:#35d399" title="أخضر"></button>
+          <button class="swatch" data-color="#4f8cff" style="background:#4f8cff" title="أزرق"></button>
+          <button class="swatch" data-color="#ffffff" style="background:#ffffff" title="أبيض"></button>
+          <label class="quality-label">السماكة:
+            <select id="boardSize">
+              <option value="2">رفيعة</option>
+              <option value="4" selected>متوسطة</option>
+              <option value="8">عريضة</option>
+            </select>
+          </label>
+          <button id="boardUndo" class="btn small">↩️ تراجع</button>
+          <button id="boardClear" class="btn small danger">🗑️ مسح الكل</button>
         </div>
 
         <div class="download-box" id="downloadBox" hidden>
@@ -420,6 +515,22 @@ const App = {
     );
   },
 
+  /* الترجمة المباشرة: بار واحد على المحاضر وعلى الطلبة */
+  caption(barId, textId, text) {
+    const bar = this.el(barId);
+    const span = this.el(textId);
+    if (!bar || !span) return;
+    span.textContent = text || '';
+    bar.hidden = !text;
+  },
+
+  fileStamp() {
+    const d = new Date();
+    const p = (n) => String(n).padStart(2, '0');
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) +
+      '-' + p(d.getHours()) + '-' + p(d.getMinutes());
+  },
+
   async copy(text) {
     try {
       await navigator.clipboard.writeText(text);
@@ -499,6 +610,31 @@ let recordVideo = null;
 let canvasStream = null;
 let drawTimer = null;
 
+/* ---------- الترجمة المباشرة ---------- */
+let recognition = null;
+let subtitlesOn = false;
+const transcript = [];        // { t: 'HH:MM:SS', text: '...' }
+let lastFinal = '';
+let lastSpeechErr = '';
+let lectureStart = Date.now();
+
+/* ---------- السبورة / الكتابة فوق الشاشة ---------- */
+const BOARD_W = 1280;
+const BOARD_H = 720;
+let presenterBoard = null;
+let boardCtx = null;
+let boardActive = false;
+let boardDrawing = false;
+let strokeId = 0;
+let lastPoint = null;
+let wbOps = [];               // كل الرسمات عشان نبعتها لطالب بيدخل متأخر
+let wbQueue = [];
+let lastWbSend = 0;
+
+/* ---------- الملخص ---------- */
+const chatLog = [];
+let summarySaved = false;
+
 /* جودة التسجيل: الحجم التقريبي = (فيديو + صوت) × الثواني ÷ 8 */
 const QUALITY = {
   ultra:  { w: 640,  h: 360, fps: 12, video: 130000,  audio: 32000,  label: 'ضغط قوي' },
@@ -549,6 +685,8 @@ async function startSession() {
 
 function onPeerOpen(id) {
   myPeerId = id;
+  lectureStart = Date.now();
+  initBoard();
   $('setupCard').hidden = true;
   $('stageCard').hidden = false;
 
@@ -656,6 +794,342 @@ function removeStudent(id) {
   if (stream) connectedRemote.delete(stream);
   remoteAudio.delete(id);
   App.log('log', 'طالب غادر: ' + id);
+}
+
+/* ---------- الترجمة المباشرة (Web Speech API) ---------- */
+function hhmmss() {
+  const s = Math.max(0, Math.floor((Date.now() - lectureStart) / 1000));
+  const m = Math.floor(s / 60);
+  const p = (n) => String(n).padStart(2, '0');
+  return p(Math.floor(m / 60)) + ':' + p(m % 60) + ':' + p(s % 60);
+}
+
+function addTranscriptLine(text) {
+  const clean = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!clean || clean === lastFinal) return;   /* التعريف الصوتي بيكرر آخر جملة */
+  lastFinal = clean;
+  transcript.push({ t: hhmmss(), text: clean });
+  if (transcript.length > 2000) transcript.shift();
+}
+
+function showCaptionLocal(text) {
+  App.caption('captionBar', 'captionText', text);
+  broadcast({ type: 'caption', text: text });
+}
+
+function toggleSubtitles() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) {
+    App.log('log', 'الترجمة المباشرة مش مدعومة في المتصفح ده — افتح المحاضر على Chrome أو Edge.');
+    return;
+  }
+  if (subtitlesOn) { stopSubtitles(); return; }
+
+  lastSpeechErr = '';
+  recognition = new SR();
+  recognition.lang = 'ar-EG';
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.maxAlternatives = 1;
+
+  recognition.onresult = (e) => {
+    let interim = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const r = e.results[i];
+      const txt = (r[0] && r[0].transcript || '').trim();
+      if (!txt) continue;
+      if (r.isFinal) addTranscriptLine(txt);
+      else interim += txt + ' ';
+    }
+    const show = (lastFinal + ' ' + interim).trim();
+    if (show) showCaptionLocal(show);
+  };
+
+  recognition.onerror = (e) => {
+    const code = e && e.error ? e.error : 'unknown';
+    if (code !== lastSpeechErr) {
+      if (code === 'network')
+        App.log('log', 'الترجمة محتاجة إنترنت — خدمة التعريف الصوتي من Google مش متاحة دلوقتي.');
+      else
+        App.log('log', 'الترجمة: ' + code);
+      lastSpeechErr = code;
+    }
+    if (code === 'not-allowed' || code === 'service-not-allowed') stopSubtitles();
+  };
+
+  /* المتصفح بيقفل التعريف بعد الصمت — نفتحه تاني طول ما الزر مفعّل */
+  recognition.onend = () => {
+    if (!subtitlesOn) return;
+    setTimeout(() => {
+      if (!subtitlesOn || !recognition) return;
+      try { recognition.start(); } catch (err) {}
+    }, 400);
+  };
+
+  try {
+    recognition.start();
+    subtitlesOn = true;
+    $('subtitleBtn').textContent = '💬 الترجمة: مفعّلة';
+    App.log('log', 'الترجمة المباشرة بدأت — الكلام هيظهر للطلبة ✅');
+  } catch (e) {
+    App.log('log', 'ما عرفناش نشغّل الترجمة: ' + App.err(e));
+  }
+}
+
+function stopSubtitles() {
+  subtitlesOn = false;
+  if (recognition) {
+    try { recognition.stop(); } catch (e) {}
+    recognition = null;
+  }
+  if ($('subtitleBtn')) $('subtitleBtn').textContent = '💬 الترجمة: مقفولة';
+  App.caption('captionBar', 'captionText', '');
+  broadcast({ type: 'caption', text: '' });
+  App.log('log', 'الترجمة المباشرة اتقفت.');
+}
+
+/* ---------- السبورة / الكتابة فوق الشاشة ---------- */
+function initBoard() {
+  presenterBoard = $('presenterBoard');
+  if (!presenterBoard) return;
+  boardCtx = presenterBoard.getContext('2d');
+  boardCtx.lineCap = 'round';
+  boardCtx.lineJoin = 'round';
+  presenterBoard.addEventListener('pointerdown', onBoardDown);
+  presenterBoard.addEventListener('pointermove', onBoardMove);
+  presenterBoard.addEventListener('pointerup', onBoardUp);
+  presenterBoard.addEventListener('pointercancel', onBoardUp);
+  presenterBoard.addEventListener('pointerleave', onBoardUp);
+}
+
+function boardPoint(e) {
+  const r = presenterBoard.getBoundingClientRect();
+  return {
+    x: Math.max(0, Math.min(1, (e.clientX - r.left) / (r.width || 1))),
+    y: Math.max(0, Math.min(1, (e.clientY - r.top) / (r.height || 1)))
+  };
+}
+
+function boardStyle() {
+  const c = document.querySelector('.swatch.active');
+  const sizeEl = $('boardSize');
+  const size = sizeEl ? parseInt(sizeEl.value, 10) : 4;
+  return { color: c ? c.dataset.color : '#ff4d6d', size: isNaN(size) ? 4 : size };
+}
+
+function drawBoardLine(op, ctx, w, h) {
+  ctx.strokeStyle = op.color;
+  ctx.lineWidth = Math.max(1, op.size * (w / BOARD_W));
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  ctx.moveTo(op.x1 * w, op.y1 * h);
+  ctx.lineTo(op.x2 * w, op.y2 * h);
+  ctx.stroke();
+}
+
+function pushWbOp(op) {
+  wbOps.push(op);
+  if (wbOps.length > 6000) wbOps.shift();
+}
+
+function flushWb() {
+  if (!wbQueue.length) return;
+  broadcast({ type: 'wb', ops: wbQueue });
+  wbQueue = [];
+  lastWbSend = Date.now();
+}
+
+function onBoardDown(e) {
+  if (!boardActive || !boardCtx) return;
+  e.preventDefault();
+  if (presenterBoard.setPointerCapture) {
+    try { presenterBoard.setPointerCapture(e.pointerId); } catch (err) {}
+  }
+  boardDrawing = true;
+  strokeId++;
+  lastPoint = boardPoint(e);
+}
+
+function onBoardMove(e) {
+  if (!boardDrawing || !boardActive || !lastPoint) return;
+  e.preventDefault();
+  const p = boardPoint(e);
+  const s = boardStyle();
+  const op = {
+    op: 'line', id: strokeId,
+    x1: lastPoint.x, y1: lastPoint.y, x2: p.x, y2: p.y,
+    color: s.color, size: s.size
+  };
+  drawBoardLine(op, boardCtx, BOARD_W, BOARD_H);
+  pushWbOp(op);
+  wbQueue.push(op);
+  if (Date.now() - lastWbSend >= 40) flushWb();
+  lastPoint = p;
+}
+
+function onBoardUp() {
+  if (!boardDrawing) return;
+  boardDrawing = false;
+  lastPoint = null;
+  flushWb();
+}
+
+function redrawTeacherBoard() {
+  if (!boardCtx) return;
+  boardCtx.clearRect(0, 0, BOARD_W, BOARD_H);
+  wbOps.forEach((o) => {
+    if (o.op === 'line') drawBoardLine(o, boardCtx, BOARD_W, BOARD_H);
+  });
+}
+
+function syncBoard() {
+  flushWb();
+  broadcast({ type: 'wb-sync', ops: wbOps });
+}
+
+function clearBoard() {
+  wbOps = [];
+  wbQueue = [];
+  redrawTeacherBoard();
+  syncBoard();
+  App.log('log', 'السبورة اتمسحت.');
+}
+
+function undoBoard() {
+  if (!wbOps.length) return;
+  const id = wbOps[wbOps.length - 1].id;
+  wbOps = wbOps.filter((o) => o.id !== id);
+  redrawTeacherBoard();
+  syncBoard();
+}
+
+function toggleBoard() {
+  boardActive = !boardActive;
+  const btn = $('boardBtn');
+  if (btn) btn.textContent = boardActive ? '🖊️ السبورة: مفعّلة' : '🖊️ السبورة: مقفولة';
+  if ($('boardTools')) $('boardTools').hidden = !boardActive;
+  if (presenterBoard) presenterBoard.classList.toggle('drawing', boardActive);
+  if (!boardActive) onBoardUp();
+  App.log('log', boardActive ? 'السبورة مفعّلة — ارسم فوق الكاميرا أو الشاشة المشتركة' : 'السبورة مقفولة — الرسالة هتفضل ظاهرة');
+}
+
+/* ---------- ملخص المحاضرة → ملف TXT على جهاز المحاضر ---------- */
+const STOP_WORDS = [
+  'من','في','على','إلى','الى','عن','مع','هذا','هذه','ذلك','التي','الذي','الذين',
+  'كان','كانت','هو','هي','أنا','انا','نحن','هم','أنت','انت','أن','ان','إن',
+  'أو','او','لا','ما','كل','بعض','كما','بين','بعد','قبل','ثم','إذا','اذا',
+  'لكن','بل','قد','سوف','سي','ست','كم','كيف','لماذا','هل','أي','اي','غير',
+  'مثل','عند','خلال','لذلك','ايضا','أيضاً','فقط','حتى','كان','في','من','على'
+];
+
+function textWords(text) {
+  return String(text || '').toLowerCase()
+    .replace(/[\u064B-\u0652]/g, '')
+    .match(/[\u0621-\u064aA-Za-z0-9]+/g) || [];
+}
+
+function logChat(who, text) {
+  chatLog.push({ who: who, text: text, t: hhmmss() });
+  if (chatLog.length > 300) chatLog.shift();
+}
+
+function buildSummary() {
+  const lines = [];
+  lines.push('ملخص المحاضرة — ' + roomName);
+  lines.push('التاريخ: ' + new Date().toLocaleString('ar-EG'));
+  lines.push('المدة: ' + hhmmss());
+  lines.push('عدد الجمل الملتقطة: ' + transcript.length);
+  lines.push('');
+
+  if (!transcript.length) {
+    lines.push('تنبيه: ما اتلتقطش كلام من الميكروفون. لازم تفعّل 💬 الترجمة المباشرة أثناء المحاضرة عشان يطلع ملخص.');
+    lines.push('');
+  }
+
+  const freq = {};
+  transcript.forEach((x) => {
+    textWords(x.text).forEach((w) => {
+      if (w.length < 3 || STOP_WORDS.indexOf(w) !== -1) return;
+      freq[w] = (freq[w] || 0) + 1;
+    });
+  });
+  const top = Object.keys(freq).sort((a, b) => freq[b] - freq[a]).slice(0, 12);
+  if (top.length) {
+    lines.push('الكلمات الأكثر تكراراً:');
+    lines.push(top.map((w) => w + ' (' + freq[w] + ')').join('، '));
+    lines.push('');
+  }
+
+  const seen = {};
+  const scored = [];
+  transcript.forEach((x, i) => {
+    const key = x.text.replace(/\s+/g, '');
+    if (seen[key]) return;
+    seen[key] = true;
+    const ws = textWords(x.text);
+    let score = ws.length > 4 ? Math.min(ws.length, 25) : 0;
+    ws.forEach((w) => { if (top.indexOf(w) !== -1) score += 3; });
+    score += Math.max(0, 8 - Math.floor(i / 10));
+    scored.push({ text: x.text, t: x.t, score: score, i: i });
+  });
+  if (scored.length) {
+    const pick = scored.slice()
+      .sort((a, b) => b.score - a.score)
+      .slice(0, Math.min(10, scored.length))
+      .sort((a, b) => a.i - b.i);
+    lines.push('أهم ما قيل:');
+    pick.forEach((s, i) => lines.push((i + 1) + '. [' + s.t + '] ' + s.text));
+    lines.push('');
+  }
+
+  if (chatLog.length) {
+    lines.push('أسئلة الطلبة (' + chatLog.length + '):');
+    chatLog.forEach((c) => lines.push('[' + c.t + '] ' + c.who + ': ' + c.text));
+    lines.push('');
+  }
+
+  lines.push('———— النص الكامل ————');
+  if (transcript.length) transcript.forEach((x) => lines.push('[' + x.t + '] ' + x.text));
+  else lines.push('(لا يوجد نص)');
+  return lines.join('\r\n');
+}
+
+function downloadTxt(text, fname) {
+  const blob = new Blob(['\uFEFF' + text], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fname;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  App.log('log', 'ملخص المحاضرة نزل: ' + fname);
+}
+
+async function saveSummary() {
+  const fname = 'ملخص-المحاضرة-' + roomName + '-' + App.fileStamp() + '.txt';
+  const text = buildSummary();
+  if (window.showSaveFilePicker) {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: fname,
+        types: [{ description: 'ملف نصي', accept: { 'text/plain': ['.txt'] } }]
+      });
+      const writable = await handle.createWritable();
+      await writable.write('\uFEFF' + text);
+      await writable.close();
+      summarySaved = true;
+      App.log('log', 'اتحفظ الملخص على جهازك (اختار سطح المكتب لو حابب) ✅');
+      return;
+    } catch (e) {
+      if (e && e.name === 'AbortError') return;   /* المستخدم رفض الاختيار */
+      /* أي خطأ تاني → نرجع للتحميل العادي */
+    }
+  }
+  downloadTxt(text, fname);
+  summarySaved = true;
 }
 
 /* ---------- عرض الشاشة ---------- */
@@ -795,6 +1269,10 @@ function drawFrame() {
     const dh = vh * scale;
     recordCtx.drawImage(recordVideo, (w - dw) / 2, (h - dh) / 2, dw, dh);
   } catch (e) {}
+  /* السبورة جزء من التسجيل — الكتابة فوق الشاشة بتظهر في الفيديو */
+  try {
+    if (presenterBoard && wbOps.length) recordCtx.drawImage(presenterBoard, 0, 0, w, h);
+  } catch (e) {}
   recordCtx.fillStyle = 'rgba(0,0,0,.55)';
   recordCtx.fillRect(0, h - 50, w, 50);
   recordCtx.fillStyle = '#fff';
@@ -900,9 +1378,19 @@ function finishRecording() {
 /* ---------- الدردشة ---------- */
 function onDataConnection(conn) {
   dataConns.set(conn.peer, conn);
+  /* إرسال فوري كمان عشان طالب بيدخل متأخر يستلم الرسم */
+  try { conn.send({ type: 'wb-sync', ops: wbOps }); } catch (e) {}
+  /* طالب جديد يستلم الرسم الحالي والترجمة الحالية فوراً */
+  conn.on('open', () => {
+    try { conn.send({ type: 'wb-sync', ops: wbOps }); } catch (e) {}
+    if (lastFinal) {
+      try { conn.send({ type: 'caption', text: lastFinal }); } catch (e) {}
+    }
+  });
   conn.on('data', (data) => {
     if (!data || data.type !== 'chat') return;
     App.appendChat('chatList', data.from, data.text, false);
+    logChat(data.from, data.text);
     broadcast(data, conn.peer);
   });
   conn.on('close', () => dataConns.delete(conn.peer));
@@ -920,6 +1408,7 @@ function sendChat() {
   if (!text) return;
   const data = { type: 'chat', from: 'المحاضر', text: text };
   App.appendChat('chatList', 'أنت', text, true);
+  logChat('المحاضر', text);
   broadcast(data);
   $('chatInput').value = '';
 }
@@ -940,6 +1429,17 @@ function wireControls() {
   $('micBtn').onclick = () => toggleTrack('audio', $('micBtn'), '🎤 الميكروفون: متصل', '🔇 الميكروفون: مقفول');
   $('camBtn').onclick = () => toggleTrack('video', $('camBtn'), '📷 الكاميرا: متصلة', '📷 الكاميرا: مقفولة');
   $('shareBtn').onclick = toggleShare;
+  $('subtitleBtn').onclick = toggleSubtitles;
+  $('boardBtn').onclick = toggleBoard;
+  $('boardClear').onclick = clearBoard;
+  $('boardUndo').onclick = undoBoard;
+  document.querySelectorAll('.swatch').forEach((b) => {
+    b.onclick = () => {
+      document.querySelectorAll('.swatch').forEach((x) => x.classList.remove('active'));
+      b.classList.add('active');
+    };
+  });
+  $('summaryBtn').onclick = saveSummary;
   $('recordBtn').onclick = startRecording;
   $('stopRecordBtn').onclick = stopRecording;
   $('sendBtn').onclick = sendChat;
@@ -947,12 +1447,18 @@ function wireControls() {
   $('endBtn').onclick = () => {
     const wasRecording = recording;
     if (wasRecording) recorder.stop();
+    if (subtitlesOn) stopSubtitles();
+    /* لو المحاضر ما ضغطش زرار الملخص، الملف ينزل لوحده قبل ما الصفحة تعمل reload */
+    if (transcript.length && !summarySaved) {
+      downloadTxt(buildSummary(), 'ملخص-المحاضرة-' + roomName + '-' + App.fileStamp() + '.txt');
+      summarySaved = true;
+    }
     if (peer) peer.destroy();
     if (localStream) localStream.getTracks().forEach((t) => t.stop());
     disconnectDisplayAudio();
     if (audioCtx) audioCtx.close().catch(() => {});
     audioCtx = null; sendDest = null; mixDest = null; micSource = null;
-    setTimeout(() => location.reload(), wasRecording ? 2500 : 100);
+    setTimeout(() => location.reload(), wasRecording ? 3000 : 1200);
   };
 }
 
