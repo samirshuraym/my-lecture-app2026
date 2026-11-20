@@ -213,6 +213,21 @@ input[type="text"]:focus { border-color: var(--primary); }
   margin: 12px 0;
 }
 .teacher-wrap video { width: 100%; height: 100%; object-fit: cover; }
+.enable-sound {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--primary);
+  color: #fff;
+  border: 0;
+  border-radius: 20px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 18px rgba(0,0,0,.4);
+}
 
 .self-wrap {
   position: relative;
@@ -391,6 +406,20 @@ const App = {
     if (p && p.catch) p.catch(() => {});
   },
 
+  /* تشغيل صوت الفيديو بعد أول لمسة (بعض المتصفحات بتقفل الصوت تلقائياً) */
+  unmuteOnGesture(videoEl) {
+    if (!videoEl) return;
+    const play = () => {
+      videoEl.muted = false;
+      const p = videoEl.play();
+      if (p && p.catch) p.catch(() => {});
+    };
+    play();
+    ["click", "touchstart"].forEach((ev) =>
+      document.addEventListener(ev, play, { once: true, passive: true })
+    );
+  },
+
   async copy(text) {
     try {
       await navigator.clipboard.writeText(text);
@@ -458,8 +487,11 @@ let recording = false;
 let selectedMime = 'video/webm';
 let recordedChunks = [];
 let audioCtx = null;
-let mixDest = null;
+let sendDest = null;        // ميكروفون + صوت الشاشة → للطلبة
+let mixDest = null;         // ميكروفون + صوت الشاشة + صوت الطلبة → للتسجيل
 let micSource = null;
+let displayAudioSource = null;
+const connectedRemote = new Set();   /* عشان ما نضيفش صوت نفس الطالب مرتين */
 
 let recordCanvas = null;
 let recordCtx = null;
@@ -543,12 +575,55 @@ function currentVideoTrack() {
   return localStream ? localStream.getVideoTracks()[0] : null;
 }
 
+/* مزج الصوت: ميكروفون + صوت الشاشة (للطلبة) + صوت الطلبة (للتسجيل) */
+function ensureAudioGraph() {
+  if (audioCtx) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  sendDest = audioCtx.createMediaStreamDestination();
+  mixDest = audioCtx.createMediaStreamDestination();
+
+  const mic = localStream ? localStream.getAudioTracks()[0] : null;
+  if (mic) {
+    micSource = audioCtx.createMediaStreamSource(new MediaStream([mic]));
+    micSource.connect(sendDest);
+    micSource.connect(mixDest);
+  }
+  /* لو الشاشة شغالة أصلاً، وصل صوتها كمان */
+  if (displayStream) connectDisplayAudio(displayStream);
+  remoteAudio.forEach((stream) => connectRemoteAudio(stream));
+}
+
+function connectDisplayAudio(stream) {
+  if (!audioCtx || !sendDest || !mixDest || !stream) return;
+  const track = stream.getAudioTracks()[0];
+  if (!track || displayAudioSource) return;
+  try {
+    displayAudioSource = audioCtx.createMediaStreamSource(new MediaStream([track]));
+    displayAudioSource.connect(sendDest);
+    displayAudioSource.connect(mixDest);
+    track.onended = () => { disconnectDisplayAudio(); };
+    App.log('log', 'صوت الشاشة اتضاف للمكالمة والتسجيل ✅');
+  } catch (e) {
+    App.log('log', 'تعذر إضافة صوت الشاشة: ' + App.err(e));
+  }
+}
+
+function disconnectDisplayAudio() {
+  if (displayAudioSource) {
+    try { displayAudioSource.disconnect(); } catch (e) {}
+    displayAudioSource = null;
+  }
+}
+
 function onIncomingCall(call) {
   App.log('log', 'طالب بيتصل: ' + call.peer);
+  ensureAudioGraph();
   const track = currentVideoTrack();
+  const audioTracks = sendDest ? sendDest.stream.getAudioTracks() : localStream.getAudioTracks();
   const answerStream = new MediaStream([
     ...(track ? [track] : []),
-    ...localStream.getAudioTracks()
+    ...audioTracks
   ]);
   call.answer(answerStream);
   calls.set(call.peer, call);
@@ -577,6 +652,8 @@ function removeStudent(id) {
   const tile = document.querySelector('[data-peer="' + id + '"]');
   if (tile) tile.remove();
   calls.delete(id);
+  const stream = remoteAudio.get(id);
+  if (stream) connectedRemote.delete(stream);
   remoteAudio.delete(id);
   App.log('log', 'طالب غادر: ' + id);
 }
@@ -609,12 +686,21 @@ async function toggleShare() {
         alert('عرض الشاشة غير مدعوم في المتصفح ده. جرّب Chrome أو Edge.');
         return;
       }
-      displayStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+      /* audio:true عشان صوت الملف/النظام اللي شغال ينقل للطلبة وللتسجيل */
+      displayStream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+      });
       sharing = true;
       const t = displayStream.getVideoTracks()[0];
       t.onended = stopShare;
       App.attach($('preview'), displayStream, true);
       $('shareBtn').textContent = '⏹️ إيقاف العرض';
+      ensureAudioGraph();
+      connectDisplayAudio(displayStream);
+      if (!displayStream.getAudioTracks().length) {
+        App.log('log', '⚠️ المتصفح ما بعتش صوت الشاشة — في نافذة المشاركة اختار "مشاركة صوت النظام/التب" وظبط علامة الصوت.');
+      }
       replaceVideoForAll();
       App.log('log', 'بدأ عرض الشاشة');
     } else {
@@ -630,6 +716,7 @@ function stopShare() {
   const old = displayStream;
   displayStream = null;
   sharing = false;
+  disconnectDisplayAudio();
   if (old) {
     old.getTracks().forEach((t) => { t.onended = null; t.stop(); });
   }
@@ -641,12 +728,15 @@ function stopShare() {
 
 /* ---------- التسجيل ---------- */
 function connectRemoteAudio(stream) {
-  if (!audioCtx || !mixDest) return;
+  if (!audioCtx || !mixDest || !stream) return;
+  if (connectedRemote.has(stream)) return;   /* متصل أصلاً — ما نكرروش */
   const track = stream.getAudioTracks()[0];
   if (!track) return;
   try {
     const src = audioCtx.createMediaStreamSource(new MediaStream([track]));
+    /* صوت الطالب يروح للتسجيل بس — مش للطلبة التانيين عشان ما يحصلش صدى */
     src.connect(mixDest);
+    connectedRemote.add(stream);
   } catch (e) {
     App.log('log', 'تعذر تسجيل صوت طالب: ' + App.err(e));
   }
@@ -730,15 +820,8 @@ async function startRecording() {
     const q = ($('qualitySelect') && $('qualitySelect').value) || 'ultra';
     quality = QUALITY[q] || QUALITY.ultra;
 
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    if (audioCtx.state === 'suspended') audioCtx.resume();
-    mixDest = audioCtx.createMediaStreamDestination();
-
-    const mic = localStream.getAudioTracks()[0];
-    if (mic) {
-      micSource = audioCtx.createMediaStreamSource(new MediaStream([mic]));
-      micSource.connect(mixDest);
-    }
+    /* استخدم نفس مزج الصوت اللي الطلبة متصلين عليه عشان ما ينقطعش الصوت */
+    ensureAudioGraph();
     remoteAudio.forEach((stream) => connectRemoteAudio(stream));
 
     const out = buildRecordingCanvas();
@@ -765,9 +848,6 @@ async function startRecording() {
   } catch (e) {
     if (drawTimer) { clearInterval(drawTimer); drawTimer = null; }
     if (canvasStream) canvasStream.getTracks().forEach((t) => t.stop());
-    if (micSource) { try { micSource.disconnect(); } catch (err) {} }
-    if (audioCtx) audioCtx.close().catch(() => {});
-    audioCtx = null; mixDest = null; micSource = null;
     canvasStream = null; recordVideo = null; recordCanvas = null; recordCtx = null;
     recorder = null; recording = false;
     if ($('qualitySelect')) $('qualitySelect').disabled = false;
@@ -804,9 +884,7 @@ function finishRecording() {
   $('downloadLink').textContent = '⬇️ حمّل التسجيل (' + fname + ')';
   $('downloadBox').hidden = false;
 
-  if (micSource) { try { micSource.disconnect(); } catch (e) {} }
-  if (audioCtx) audioCtx.close().catch(() => {});
-  audioCtx = null; mixDest = null; micSource = null;
+  /* ما نقفلش الـ audioCtx هنا — الطلبة لسه بيسمعوا منه في المكالمة */
   canvasStream = null; recordVideo = null; recordCanvas = null; recordCtx = null;
   recorder = null; recordedChunks = [];
   recording = false; recordingStart = 0;
@@ -871,6 +949,9 @@ function wireControls() {
     if (wasRecording) recorder.stop();
     if (peer) peer.destroy();
     if (localStream) localStream.getTracks().forEach((t) => t.stop());
+    disconnectDisplayAudio();
+    if (audioCtx) audioCtx.close().catch(() => {});
+    audioCtx = null; sendDest = null; mixDest = null; micSource = null;
     setTimeout(() => location.reload(), wasRecording ? 2500 : 100);
   };
 }
