@@ -134,33 +134,40 @@ input[type="text"]:focus { border-color: var(--primary); }
 .status { color: var(--ok); font-size: 13px; }
 .status.rec { color: var(--danger); font-weight: 700; }
 
-.videos { display: grid; gap: 12px; margin: 12px 0; }
+/* صور صغيرة في صف واحد — بتخفف العرض والمعالج */
+.videos {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 12px 0;
+}
 
 .tile {
   position: relative;
   background: #05080f;
-  border-radius: 12px;
+  border-radius: 10px;
   overflow: hidden;
   border: 1px solid var(--border);
 }
 .tile video { width: 100%; height: 100%; display: block; object-fit: cover; }
-.main-tile { aspect-ratio: 16 / 9; }
+.main-tile { width: 200px; flex: 0 0 200px; aspect-ratio: 16 / 9; }
 .label {
   position: absolute;
-  bottom: 8px;
-  right: 8px;
-  background: rgba(0,0,0,.6);
-  padding: 4px 9px;
+  bottom: 6px;
+  right: 6px;
+  background: rgba(0,0,0,.65);
+  padding: 3px 7px;
   border-radius: 6px;
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .students-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 10px;
 }
-.student { aspect-ratio: 4 / 3; }
+.student { width: 150px; flex: 0 0 150px; aspect-ratio: 4 / 3; }
 
 .controls { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
 
@@ -332,7 +339,8 @@ const App = {
       throw new Error('المتصفح مش بيدعم الكاميرا/الميكروفون، أو الرابط مش HTTPS / localhost.');
     }
     return navigator.mediaDevices.getUserMedia({
-      video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
+      /* دقة متوسطة للكاميرا: كافية للمحاضرة وبتخفف المعالج والموبايلات */
+      video: { width: { ideal: 640 }, height: { ideal: 360 }, facingMode: 'user' },
       audio: { echoCancellation: true, noiseSuppression: true }
     });
   },
